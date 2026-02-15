@@ -56,7 +56,7 @@ export class Renderer {
         // Get the actual bounds from the EMF file
         const emfBounds = this._img.getBounds();
         
-        this._render(
+        const gdi = this._render(
             new SVG(svgElement),
             info.mapMode,
             emfBounds.width,
@@ -64,9 +64,16 @@ export class Renderer {
             emfBounds.width,
             emfBounds.height);
         svgElement.setAttribute("viewBox", [0, 0, emfBounds.width, emfBounds.height].join(" "));
-        // Preserve aspect ratio by default (xMidYMid meet), or allow stretching if explicitly disabled
-        const preserveAspectRatio = info.preserveAspectRatio !== false ? "xMidYMid meet" : "none";
+        
+        // Set preserveAspectRatio based on the final map mode after rendering:
+        // - MM_ANISOTROPIC (8): allows independent X/Y scaling (no aspect ratio preservation)
+        // - All other modes (including MM_ISOTROPIC): preserve aspect ratio
+        const finalMapMode = gdi.getMapMode();
+        const preserveAspectRatio = finalMapMode === Helper.GDI.MapMode.MM_ANISOTROPIC 
+            ? "none" 
+            : "xMidYMid meet";
         svgElement.setAttribute("preserveAspectRatio", preserveAspectRatio);
+        
         svgElement.setAttribute("width", info.width);
         svgElement.setAttribute("height", info.height);
         return svgElement;
@@ -93,12 +100,13 @@ export class Renderer {
         }
     }
 
-    private _render(svg: SVG, mapMode: number, w: number, h: number, xExt: number, yExt: number) {
+    private _render(svg: SVG, mapMode: number, w: number, h: number, xExt: number, yExt: number): GDIContext {
         const gdi = new GDIContext(svg);
         gdi.setWindowExtEx(w, h);
         gdi.setViewportExtEx(xExt, yExt);
         gdi.setMapMode(mapMode);
         this._img.render(gdi);
+        return gdi;
     }
 }
 

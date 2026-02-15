@@ -252,6 +252,10 @@ export class GDIContext {
         this.state._svggroup = null;
     }
 
+    public getMapMode(): number {
+        return this.state.mapmode;
+    }
+
     public setWindowOrgEx(x: number, y: number): void {
         Helper.log("[gdi] setWindowOrgEx: x=" + x + " y=" + y);
         this.state.wx = x;

@@ -1245,6 +1245,9 @@ var GDIContext = /** @class */ (function () {
         this.state.mapmode = mode;
         this.state._svggroup = null;
     };
+    GDIContext.prototype.getMapMode = function () {
+        return this.state.mapmode;
+    };
     GDIContext.prototype.setWindowOrgEx = function (x, y) {
         _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.log("[gdi] setWindowOrgEx: x=" + x + " y=" + y);
         this.state.wx = x;
@@ -2889,10 +2892,15 @@ var Renderer = /** @class */ (function () {
         var svgElement = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         // Get the actual bounds from the EMF file
         var emfBounds = this._img.getBounds();
-        this._render(new _util__WEBPACK_IMPORTED_MODULE_0__.SVG(svgElement), info.mapMode, emfBounds.width, emfBounds.height, emfBounds.width, emfBounds.height);
+        var gdi = this._render(new _util__WEBPACK_IMPORTED_MODULE_0__.SVG(svgElement), info.mapMode, emfBounds.width, emfBounds.height, emfBounds.width, emfBounds.height);
         svgElement.setAttribute("viewBox", [0, 0, emfBounds.width, emfBounds.height].join(" "));
-        // Preserve aspect ratio by default (xMidYMid meet), or allow stretching if explicitly disabled
-        var preserveAspectRatio = info.preserveAspectRatio !== false ? "xMidYMid meet" : "none";
+        // Set preserveAspectRatio based on the final map mode after rendering:
+        // - MM_ANISOTROPIC (8): allows independent X/Y scaling (no aspect ratio preservation)
+        // - All other modes (including MM_ISOTROPIC): preserve aspect ratio
+        var finalMapMode = gdi.getMapMode();
+        var preserveAspectRatio = finalMapMode === _Helper__WEBPACK_IMPORTED_MODULE_4__.Helper.GDI.MapMode.MM_ANISOTROPIC
+            ? "none"
+            : "xMidYMid meet";
         svgElement.setAttribute("preserveAspectRatio", preserveAspectRatio);
         svgElement.setAttribute("width", info.width);
         svgElement.setAttribute("height", info.height);
@@ -2920,6 +2928,7 @@ var Renderer = /** @class */ (function () {
         gdi.setViewportExtEx(xExt, yExt);
         gdi.setMapMode(mapMode);
         this._img.render(gdi);
+        return gdi;
     };
     return Renderer;
 }());

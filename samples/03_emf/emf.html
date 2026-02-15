@@ -46,8 +46,7 @@ function displayEMF(blob) {
             hExt: height,
             xExt: width,
             yExt: height,
-            mapMode: 8,
-            preserveAspectRatio: $("#preserveaspectratio").prop("checked")
+            mapMode: 1 // MM_TEXT - initial map mode (EMF file will set its own)
         };
         var renderer = new EMFJS.Renderer(blob);
         var svg = setPictBorder($(renderer.render(settings)), $("#showpicborder").prop("checked"));
@@ -101,12 +100,6 @@ $(document).ready(function() {
             setPictBorder($(this), show);
         });
     });
-    $("#preserveaspectratio").change(function() {
-        var preserve = $(this).prop("checked");
-        $(".emfpict").each(function() {
-            $(this).attr("preserveAspectRatio", preserve ? "xMidYMid meet" : "none");
-        });
-    });
     $("#dropzone")
         .on("drop", function(evt) {
             evt.stopPropagation()
@@ -148,9 +141,7 @@ $(document).ready(function() {
         </form>
     </span>
     <span id="tools" style="display: none;">
-        <label><input id="showpicborder" type="checkbox"/>Picture border</label>
-        <label><input id="preserveaspectratio" type="checkbox" checked="checked"/>Preserve aspect ratio</label>
-    </span>
+        <label><input id="showpicborder" type="checkbox"/>Picture border</label>    </span>
 </div>
 <div id="dropzone" style="display: inline-block; border-radius: 6pt; border: 2pt solid #dddddd; padding: 30pt;">
     Drop an EMF image here
