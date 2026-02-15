@@ -39,7 +39,6 @@ export interface IRendererSettings {
     xExt: number;
     yExt: number;
     mapMode: number;
-    preserveAspectRatio?: boolean;
 }
 
 export class Renderer {
@@ -55,7 +54,7 @@ export class Renderer {
 
         // Get the actual bounds from the EMF file
         const emfBounds = this._img.getBounds();
-        
+
         const gdi = this._render(
             new SVG(svgElement),
             info.mapMode,
@@ -64,16 +63,16 @@ export class Renderer {
             emfBounds.width,
             emfBounds.height);
         svgElement.setAttribute("viewBox", [0, 0, emfBounds.width, emfBounds.height].join(" "));
-        
+
         // Set preserveAspectRatio based on the final map mode after rendering:
         // - MM_ANISOTROPIC (8): allows independent X/Y scaling (no aspect ratio preservation)
         // - All other modes (including MM_ISOTROPIC): preserve aspect ratio
         const finalMapMode = gdi.getMapMode();
-        const preserveAspectRatio = finalMapMode === Helper.GDI.MapMode.MM_ANISOTROPIC 
-            ? "none" 
+        const preserveAspectRatio = finalMapMode === Helper.GDI.MapMode.MM_ANISOTROPIC
+            ? "none"
             : "xMidYMid meet";
         svgElement.setAttribute("preserveAspectRatio", preserveAspectRatio);
-        
+
         svgElement.setAttribute("width", info.width);
         svgElement.setAttribute("height", info.height);
         return svgElement;
