@@ -39,6 +39,7 @@ export interface IRendererSettings {
     xExt: number;
     yExt: number;
     mapMode: number;
+    preserveAspectRatio?: boolean;
 }
 
 export class Renderer {
@@ -52,15 +53,20 @@ export class Renderer {
     public render(info: IRendererSettings): SVGElement {
         const svgElement = document.createElementNS("http://www.w3.org/2000/svg", "svg");
 
+        // Get the actual bounds from the EMF file
+        const emfBounds = this._img.getBounds();
+        
         this._render(
             new SVG(svgElement),
             info.mapMode,
-            info.wExt,
-            info.hExt,
-            info.xExt,
-            info.yExt);
-        svgElement.setAttribute("viewBox", [0, 0, info.xExt, info.yExt].join(" "));
-        svgElement.setAttribute("preserveAspectRatio", "none"); // TODO: MM_ISOTROPIC vs MM_ANISOTROPIC
+            emfBounds.width,
+            emfBounds.height,
+            emfBounds.width,
+            emfBounds.height);
+        svgElement.setAttribute("viewBox", [0, 0, emfBounds.width, emfBounds.height].join(" "));
+        // Preserve aspect ratio by default (xMidYMid meet), or allow stretching if explicitly disabled
+        const preserveAspectRatio = info.preserveAspectRatio !== false ? "xMidYMid meet" : "none";
+        svgElement.setAttribute("preserveAspectRatio", preserveAspectRatio);
         svgElement.setAttribute("width", info.width);
         svgElement.setAttribute("height", info.height);
         return svgElement;
@@ -92,9 +98,7 @@ export class Renderer {
         gdi.setWindowExtEx(w, h);
         gdi.setViewportExtEx(xExt, yExt);
         gdi.setMapMode(mapMode);
-        Helper.log("[EMF] BEGIN RENDERING --->");
         this._img.render(gdi);
-        Helper.log("[EMF] <--- DONE RENDERING");
     }
 }
 
@@ -109,5 +113,13 @@ class EMF {
 
     public render(gdi: GDIContext): void {
         this._records.play(gdi);
+    }
+
+    public getBounds(): { width: number, height: number } {
+        const bounds = this._records.getBounds();
+        return {
+            width: bounds.right - bounds.left,
+            height: bounds.bottom - bounds.top
+        };
     }
 }

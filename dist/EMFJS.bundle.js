@@ -20,8 +20,8 @@ return /******/ (() => { // webpackBootstrap
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   BitmapInfo: () => (/* binding */ BitmapInfo),
-/* harmony export */   DIBitmap: () => (/* binding */ DIBitmap)
+/* harmony export */   "BitmapInfo": () => (/* binding */ BitmapInfo),
+/* harmony export */   "DIBitmap": () => (/* binding */ DIBitmap)
 /* harmony export */ });
 /* harmony import */ var _Helper__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./Helper */ "./src/emfjs/Helper.ts");
 /*
@@ -151,38 +151,86 @@ var DIBitmap = /** @class */ (function () {
         _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper._writeUint32Val(view, 10, this._info.infosize() + 14);
         return _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper._blobToBinary(view);
     };
+    DIBitmap.prototype.convertToPNG = function (bitmapData, width, height, hasAlpha) {
+        // Create a canvas element to convert bitmap to PNG
+        // This provides better browser compatibility than BMP format
+        var canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = Math.abs(height);
+        var ctx = canvas.getContext('2d');
+        if (!ctx) {
+            throw new Error('Unable to get canvas context for PNG conversion');
+        }
+        // Create ImageData object
+        var imageData = ctx.createImageData(width, Math.abs(height));
+        var pixels = imageData.data;
+        // Calculate row size with padding (for BMP format)
+        var rowSize = ((width * 32 + 31) >>> 5) << 2;
+        // Convert BGRA to RGBA and copy to ImageData
+        // BMP rows are stored bottom-to-top (unless height is negative), so we need to flip
+        var absHeight = Math.abs(height);
+        var topDown = height < 0; // Negative height means top-down storage
+        for (var y = 0; y < absHeight; y++) {
+            var srcY = topDown ? y : (absHeight - 1 - y);
+            for (var x = 0; x < width; x++) {
+                var srcOffset = srcY * rowSize + x * 4;
+                var dstOffset = (y * width + x) * 4;
+                // Convert BGRA to RGBA
+                pixels[dstOffset] = bitmapData[srcOffset + 2]; // R
+                pixels[dstOffset + 1] = bitmapData[srcOffset + 1]; // G
+                pixels[dstOffset + 2] = bitmapData[srcOffset]; // B
+                // For alpha, use the bitmap alpha if it's meaningful, otherwise make it opaque
+                if (hasAlpha && bitmapData[srcOffset + 3] > 0) {
+                    pixels[dstOffset + 3] = bitmapData[srcOffset + 3]; // A
+                }
+                else {
+                    pixels[dstOffset + 3] = 255; // Fully opaque
+                }
+            }
+        }
+        ctx.putImageData(imageData, 0, 0);
+        // Convert canvas to PNG data URL
+        return canvas.toDataURL('image/png');
+    };
     DIBitmap.prototype.base64ref = function () {
         var prevpos = this._reader.pos;
         this._reader.seek(this._offset);
-        var mime = "image/bmp";
         var header = this._info.header();
-        var data;
+        // Check if this is an embedded JPEG or PNG
         if (header instanceof BitmapInfoHeader && header.compression != null) {
             switch (header.compression) {
                 case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.BitmapCompression.BI_JPEG:
-                    mime = "data:image/jpeg";
-                    break;
+                    this._reader.seek(this._location.data.off);
+                    return "data:image/jpeg;base64," + btoa(this._reader.readBinary(this._location.data.size));
                 case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.BitmapCompression.BI_PNG:
-                    mime = "data:image/png";
-                    break;
-                default:
-                    data = this.makeBitmapFileHeader();
-                    break;
+                    this._reader.seek(this._location.data.off);
+                    return "data:image/png;base64," + btoa(this._reader.readBinary(this._location.data.size));
             }
         }
-        else {
-            data = this.makeBitmapFileHeader();
+        // For 32-bit bitmaps, convert to PNG for better browser compatibility
+        // BMP format has poor support in browsers, especially on Linux
+        if (header instanceof BitmapInfoHeader && header.bitcount === 32) {
+            this._reader.seek(this._location.data.off);
+            // Read bitmap data into a buffer
+            var bitmapBytes = new Uint8Array(this._location.data.size);
+            var bitmapData = this._reader.readBinary(this._location.data.size);
+            // Convert binary string to Uint8Array
+            for (var i = 0; i < this._location.data.size; i++) {
+                bitmapBytes[i] = bitmapData.charCodeAt(i);
+            }
+            // Convert to PNG format using canvas
+            // This provides much better browser compatibility than BMP
+            var pngDataUrl = this.convertToPNG(bitmapBytes, header.width, header.height, true);
+            this._reader.seek(prevpos);
+            return pngDataUrl;
         }
-        this._reader.seek(this._location.header.offset);
-        if (data != null) {
-            data += this._reader.readBinary(this._location.header.size);
-        }
-        else {
-            data = this._reader.readBinary(this._location.header.size);
-        }
-        this._reader.seek(this._location.data.offset);
+        // For other bitmap formats (not 32-bit), fall back to BMP format
+        var data = this.makeBitmapFileHeader();
+        this._reader.seek(this._location.header.off);
+        data += this._reader.readBinary(this._location.header.size);
+        this._reader.seek(this._location.data.off);
         data += this._reader.readBinary(this._location.data.size);
-        var ref = "data:" + mime + ";base64," + btoa(data);
+        var ref = "data:image/bmp;base64," + btoa(data);
         this._reader.seek(prevpos);
         return ref;
     };
@@ -201,7 +249,7 @@ var DIBitmap = /** @class */ (function () {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   Blob: () => (/* binding */ Blob)
+/* harmony export */   "Blob": () => (/* binding */ Blob)
 /* harmony export */ });
 /* harmony import */ var _Helper__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./Helper */ "./src/emfjs/Helper.ts");
 /*
@@ -364,12 +412,13 @@ var Blob = /** @class */ (function () {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   EMFRecords: () => (/* binding */ EMFRecords)
+/* harmony export */   "EMFRecords": () => (/* binding */ EMFRecords)
 /* harmony export */ });
-/* harmony import */ var _Helper__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./Helper */ "./src/emfjs/Helper.ts");
-/* harmony import */ var _Primitives__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./Primitives */ "./src/emfjs/Primitives.ts");
-/* harmony import */ var _Region__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./Region */ "./src/emfjs/Region.ts");
-/* harmony import */ var _Style__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./Style */ "./src/emfjs/Style.ts");
+/* harmony import */ var _Bitmap__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./Bitmap */ "./src/emfjs/Bitmap.ts");
+/* harmony import */ var _Helper__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./Helper */ "./src/emfjs/Helper.ts");
+/* harmony import */ var _Primitives__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./Primitives */ "./src/emfjs/Primitives.ts");
+/* harmony import */ var _Region__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./Region */ "./src/emfjs/Region.ts");
+/* harmony import */ var _Style__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./Style */ "./src/emfjs/Style.ts");
 /*
 
 The MIT License (MIT)
@@ -400,14 +449,15 @@ SOFTWARE.
 
 
 
+
 var EmfHeader = /** @class */ (function () {
     function EmfHeader(reader, headerSize) {
         var recordStart = reader.pos - 8;
         this.size = headerSize;
-        this.bounds = new _Primitives__WEBPACK_IMPORTED_MODULE_1__.RectL(reader);
-        this.frame = new _Primitives__WEBPACK_IMPORTED_MODULE_1__.RectL(reader);
-        if (reader.readUint32() !== _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.FormatSignature.ENHMETA_SIGNATURE) {
-            throw new _Helper__WEBPACK_IMPORTED_MODULE_0__.EMFJSError("Invalid header signature");
+        this.bounds = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.RectL(reader);
+        this.frame = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.RectL(reader);
+        if (reader.readUint32() !== _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.FormatSignature.ENHMETA_SIGNATURE) {
+            throw new _Helper__WEBPACK_IMPORTED_MODULE_1__.EMFJSError("Invalid header signature");
         }
         reader.skip(4); // version
         reader.skip(4); // bytes (size of metafile)
@@ -424,11 +474,11 @@ var EmfHeader = /** @class */ (function () {
         var hdrSize = headerSize;
         if (descriptionLen > 0) {
             if (descriptionOff < 88) {
-                throw new _Helper__WEBPACK_IMPORTED_MODULE_0__.EMFJSError("Invalid header description offset");
+                throw new _Helper__WEBPACK_IMPORTED_MODULE_1__.EMFJSError("Invalid header description offset");
             }
             hdrSize = descriptionOff + (descriptionLen * 2);
             if (hdrSize > headerSize) {
-                throw new _Helper__WEBPACK_IMPORTED_MODULE_0__.EMFJSError("Invalid header description length");
+                throw new _Helper__WEBPACK_IMPORTED_MODULE_1__.EMFJSError("Invalid header description length");
             }
             var prevPos = reader.pos;
             reader.seek(recordStart + descriptionOff);
@@ -444,15 +494,15 @@ var EmfHeader = /** @class */ (function () {
             var pixelFormatOff = reader.readUint32();
             var haveOpenGl = reader.readUint32();
             if (haveOpenGl !== 0) {
-                throw new _Helper__WEBPACK_IMPORTED_MODULE_0__.EMFJSError("OpenGL records are not yet supported");
+                throw new _Helper__WEBPACK_IMPORTED_MODULE_1__.EMFJSError("OpenGL records are not yet supported");
             }
             if (pixelFormatOff !== 0) {
                 if (pixelFormatOff < 100 || pixelFormatOff < hdrSize) {
-                    throw new _Helper__WEBPACK_IMPORTED_MODULE_0__.EMFJSError("Invalid pixel format offset");
+                    throw new _Helper__WEBPACK_IMPORTED_MODULE_1__.EMFJSError("Invalid pixel format offset");
                 }
                 hdrSize = pixelFormatOff + pixelFormatSize;
                 if (hdrSize > headerSize) {
-                    throw new _Helper__WEBPACK_IMPORTED_MODULE_0__.EMFJSError("Invalid pixel format size");
+                    throw new _Helper__WEBPACK_IMPORTED_MODULE_1__.EMFJSError("Invalid pixel format size");
                 }
                 // TODO: read pixel format blob
             }
@@ -463,6 +513,9 @@ var EmfHeader = /** @class */ (function () {
             }
         }
     }
+    EmfHeader.prototype.getBounds = function () {
+        return this.bounds;
+    };
     EmfHeader.prototype.toString = function () {
         return "{bounds: " + this.bounds.toString() + ", frame: " + this.frame.toString()
             + ", description: " + this.description + "}";
@@ -480,20 +533,20 @@ var EMFRecords = /** @class */ (function () {
             var type = reader.readUint32();
             var size = reader.readUint32();
             if (size < 8) {
-                throw new _Helper__WEBPACK_IMPORTED_MODULE_0__.EMFJSError("Invalid record size");
+                throw new _Helper__WEBPACK_IMPORTED_MODULE_1__.EMFJSError("Invalid record size");
             }
             switch (type) {
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_EOF:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_EOF:
                     all = true;
                     return "break-main_loop";
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETMAPMODE: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETMAPMODE: {
                     var mapMode_1 = reader.readInt32();
                     this_1._records.push(function (gdi) {
                         gdi.setMapMode(mapMode_1);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETWINDOWORGEX: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETWINDOWORGEX: {
                     var x_1 = reader.readInt32();
                     var y_1 = reader.readInt32();
                     this_1._records.push(function (gdi) {
@@ -501,7 +554,7 @@ var EMFRecords = /** @class */ (function () {
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETWINDOWEXTEX: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETWINDOWEXTEX: {
                     var x_2 = reader.readUint32();
                     var y_2 = reader.readUint32();
                     this_1._records.push(function (gdi) {
@@ -509,7 +562,7 @@ var EMFRecords = /** @class */ (function () {
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETVIEWPORTORGEX: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETVIEWPORTORGEX: {
                     var x_3 = reader.readInt32();
                     var y_3 = reader.readInt32();
                     this_1._records.push(function (gdi) {
@@ -517,7 +570,7 @@ var EMFRecords = /** @class */ (function () {
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETVIEWPORTEXTEX: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETVIEWPORTEXTEX: {
                     var x_4 = reader.readUint32();
                     var y_4 = reader.readUint32();
                     this_1._records.push(function (gdi) {
@@ -525,62 +578,62 @@ var EMFRecords = /** @class */ (function () {
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SAVEDC: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SAVEDC: {
                     this_1._records.push(function (gdi) {
                         gdi.saveDC();
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_RESTOREDC: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_RESTOREDC: {
                     var saved_1 = reader.readInt32();
                     this_1._records.push(function (gdi) {
                         gdi.restoreDC(saved_1);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETBKMODE: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETBKMODE: {
                     var bkMode_1 = reader.readUint32();
                     this_1._records.push(function (gdi) {
                         gdi.setBkMode(bkMode_1);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETBKCOLOR: {
-                    var bkColor_1 = new _Style__WEBPACK_IMPORTED_MODULE_3__.ColorRef(reader);
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETBKCOLOR: {
+                    var bkColor_1 = new _Style__WEBPACK_IMPORTED_MODULE_4__.ColorRef(reader);
                     this_1._records.push(function (gdi) {
                         gdi.setBkColor(bkColor_1);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_CREATEBRUSHINDIRECT: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_CREATEBRUSHINDIRECT: {
                     var index_1 = reader.readUint32();
-                    var brush_1 = new _Style__WEBPACK_IMPORTED_MODULE_3__.Brush(reader);
+                    var brush_1 = new _Style__WEBPACK_IMPORTED_MODULE_4__.Brush(reader);
                     this_1._records.push(function (gdi) {
                         gdi.createBrush(index_1, brush_1);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_CREATEPEN: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_CREATEPEN: {
                     var index_2 = reader.readUint32();
-                    var pen_1 = new _Style__WEBPACK_IMPORTED_MODULE_3__.Pen(reader, null);
+                    var pen_1 = new _Style__WEBPACK_IMPORTED_MODULE_4__.Pen(reader, null);
                     this_1._records.push(function (gdi) {
                         gdi.createPen(index_2, pen_1);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_EXTCREATEPEN: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_EXTCREATEPEN: {
                     var index_3 = reader.readUint32();
                     var offBmi = reader.readUint32();
                     var cbBmi = reader.readUint32();
                     var offBits = reader.readUint32();
                     var cbBits = reader.readUint32();
-                    var pen_2 = new _Style__WEBPACK_IMPORTED_MODULE_3__.Pen(reader, {
+                    var pen_2 = new _Style__WEBPACK_IMPORTED_MODULE_4__.Pen(reader, {
                         header: {
-                            off: offBmi,
+                            off: curpos + offBmi,
                             size: cbBmi,
                         },
                         data: {
-                            off: offBits,
+                            off: curpos + offBits,
                             size: cbBits,
                         },
                     });
@@ -589,36 +642,36 @@ var EMFRecords = /** @class */ (function () {
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SELECTOBJECT: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SELECTOBJECT: {
                     var idx_1 = reader.readUint32();
                     this_1._records.push(function (gdi) {
                         gdi.selectObject(idx_1, null);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_DELETEOBJECT: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_DELETEOBJECT: {
                     var idx_2 = reader.readUint32();
                     this_1._records.push(function (gdi) {
                         gdi.deleteObject(idx_2);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_RECTANGLE: {
-                    var rect_1 = new _Primitives__WEBPACK_IMPORTED_MODULE_1__.RectL(reader);
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_RECTANGLE: {
+                    var rect_1 = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.RectL(reader);
                     this_1._records.push(function (gdi) {
                         gdi.rectangle(rect_1, 0, 0);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_ROUNDRECT: {
-                    var rect_2 = new _Primitives__WEBPACK_IMPORTED_MODULE_1__.RectL(reader);
-                    var corner_1 = new _Primitives__WEBPACK_IMPORTED_MODULE_1__.SizeL(reader);
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_ROUNDRECT: {
+                    var rect_2 = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.RectL(reader);
+                    var corner_1 = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.SizeL(reader);
                     this_1._records.push(function (gdi) {
                         gdi.rectangle(rect_2, corner_1.cx, corner_1.cy);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_LINETO: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_LINETO: {
                     var x_5 = reader.readInt32();
                     var y_5 = reader.readInt32();
                     this_1._records.push(function (gdi) {
@@ -626,7 +679,7 @@ var EMFRecords = /** @class */ (function () {
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_MOVETOEX: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_MOVETOEX: {
                     var x_6 = reader.readInt32();
                     var y_6 = reader.readInt32();
                     this_1._records.push(function (gdi) {
@@ -634,14 +687,14 @@ var EMFRecords = /** @class */ (function () {
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYGON:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYGON16: {
-                    var isSmall = (type === _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYGON16);
-                    var bounds_1 = new _Primitives__WEBPACK_IMPORTED_MODULE_1__.RectL(reader);
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYGON:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYGON16: {
+                    var isSmall = (type === _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYGON16);
+                    var bounds_1 = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.RectL(reader);
                     var cnt = reader.readUint32();
                     var points_1 = [];
                     while (cnt > 0) {
-                        points_1.push(isSmall ? new _Primitives__WEBPACK_IMPORTED_MODULE_1__.PointS(reader) : new _Primitives__WEBPACK_IMPORTED_MODULE_1__.PointL(reader));
+                        points_1.push(isSmall ? new _Primitives__WEBPACK_IMPORTED_MODULE_2__.PointS(reader) : new _Primitives__WEBPACK_IMPORTED_MODULE_2__.PointL(reader));
                         cnt--;
                     }
                     this_1._records.push(function (gdi) {
@@ -649,10 +702,10 @@ var EMFRecords = /** @class */ (function () {
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYPOLYGON:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYPOLYGON16: {
-                    var isSmall = (type === _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYPOLYGON16);
-                    var bounds_2 = new _Primitives__WEBPACK_IMPORTED_MODULE_1__.RectL(reader);
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYPOLYGON:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYPOLYGON16: {
+                    var isSmall = (type === _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYPOLYGON16);
+                    var bounds_2 = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.RectL(reader);
                     var polyCnt = reader.readUint32();
                     reader.skip(4); // count
                     var polygonsPtCnts = [];
@@ -664,7 +717,7 @@ var EMFRecords = /** @class */ (function () {
                         var ptCnt = polygonsPtCnts[i];
                         var p = [];
                         for (var ip = 0; ip < ptCnt; ip++) {
-                            p.push(isSmall ? new _Primitives__WEBPACK_IMPORTED_MODULE_1__.PointS(reader) : new _Primitives__WEBPACK_IMPORTED_MODULE_1__.PointL(reader));
+                            p.push(isSmall ? new _Primitives__WEBPACK_IMPORTED_MODULE_2__.PointS(reader) : new _Primitives__WEBPACK_IMPORTED_MODULE_2__.PointL(reader));
                         }
                         polygons_1.push(p);
                     }
@@ -673,21 +726,21 @@ var EMFRecords = /** @class */ (function () {
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETPOLYFILLMODE: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETPOLYFILLMODE: {
                     var polyfillmode_1 = reader.readUint32();
                     this_1._records.push(function (gdi) {
                         gdi.setPolyFillMode(polyfillmode_1);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYLINE16:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYLINETO16: {
-                    var isLineTo_1 = (type === _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYLINETO16);
-                    var bounds_3 = new _Primitives__WEBPACK_IMPORTED_MODULE_1__.RectL(reader);
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYLINE16:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYLINETO16: {
+                    var isLineTo_1 = (type === _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYLINETO16);
+                    var bounds_3 = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.RectL(reader);
                     var cnt = reader.readUint32();
                     var points_2 = [];
                     while (cnt > 0) {
-                        points_2.push(new _Primitives__WEBPACK_IMPORTED_MODULE_1__.PointS(reader));
+                        points_2.push(new _Primitives__WEBPACK_IMPORTED_MODULE_2__.PointS(reader));
                         cnt--;
                     }
                     this_1._records.push(function (gdi) {
@@ -695,14 +748,14 @@ var EMFRecords = /** @class */ (function () {
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYBEZIER:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYBEZIERTO: {
-                    var isPolyBezierTo_1 = (type === _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYBEZIERTO);
-                    var bounds_4 = new _Primitives__WEBPACK_IMPORTED_MODULE_1__.RectL(reader);
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYBEZIER:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYBEZIERTO: {
+                    var isPolyBezierTo_1 = (type === _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYBEZIERTO);
+                    var bounds_4 = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.RectL(reader);
                     var cnt = reader.readUint32();
                     var points_3 = [];
                     while (cnt > 0) {
-                        points_3.push(new _Primitives__WEBPACK_IMPORTED_MODULE_1__.PointL(reader));
+                        points_3.push(new _Primitives__WEBPACK_IMPORTED_MODULE_2__.PointL(reader));
                         cnt--;
                     }
                     this_1._records.push(function (gdi) {
@@ -710,13 +763,13 @@ var EMFRecords = /** @class */ (function () {
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYBEZIER16: {
-                    var bounds_5 = new _Primitives__WEBPACK_IMPORTED_MODULE_1__.RectL(reader);
-                    var start = new _Primitives__WEBPACK_IMPORTED_MODULE_1__.PointL(reader);
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYBEZIER16: {
+                    var bounds_5 = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.RectL(reader);
+                    var start = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.PointL(reader);
                     var cnt = reader.readUint32();
                     var points_4 = [start];
                     while (cnt > 0) {
-                        points_4.push(new _Primitives__WEBPACK_IMPORTED_MODULE_1__.PointS(reader));
+                        points_4.push(new _Primitives__WEBPACK_IMPORTED_MODULE_2__.PointS(reader));
                         cnt--;
                     }
                     this_1._records.push(function (gdi) {
@@ -724,12 +777,12 @@ var EMFRecords = /** @class */ (function () {
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYBEZIERTO16: {
-                    var bounds_6 = new _Primitives__WEBPACK_IMPORTED_MODULE_1__.RectL(reader);
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYBEZIERTO16: {
+                    var bounds_6 = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.RectL(reader);
                     var cnt = reader.readUint32();
                     var points_5 = [];
                     while (cnt > 0) {
-                        points_5.push(new _Primitives__WEBPACK_IMPORTED_MODULE_1__.PointS(reader));
+                        points_5.push(new _Primitives__WEBPACK_IMPORTED_MODULE_2__.PointS(reader));
                         cnt--;
                     }
                     this_1._records.push(function (gdi) {
@@ -737,180 +790,210 @@ var EMFRecords = /** @class */ (function () {
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETTEXTALIGN: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETTEXTALIGN: {
                     var textAlign_1 = reader.readUint32();
                     this_1._records.push(function (gdi) {
                         gdi.setTextAlign(textAlign_1);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETSTRETCHBLTMODE: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETSTRETCHBLTMODE: {
                     var stretchMode_1 = reader.readUint32();
                     this_1._records.push(function (gdi) {
                         gdi.setStretchBltMode(stretchMode_1);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETBRUSHORGEX: {
-                    var origin_1 = new _Primitives__WEBPACK_IMPORTED_MODULE_1__.PointL(reader);
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETBRUSHORGEX: {
+                    var origin_1 = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.PointL(reader);
                     this_1._records.push(function (gdi) {
                         gdi.setBrushOrgEx(origin_1);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_BEGINPATH: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_BEGINPATH: {
                     this_1._records.push(function (gdi) {
                         gdi.beginPath();
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_ENDPATH: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_ENDPATH: {
                     this_1._records.push(function (gdi) {
                         gdi.endPath();
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_ABORTPATH: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_ABORTPATH: {
                     this_1._records.push(function (gdi) {
                         gdi.abortPath();
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_CLOSEFIGURE: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_CLOSEFIGURE: {
                     this_1._records.push(function (gdi) {
                         gdi.closeFigure();
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_FILLPATH: {
-                    var bounds_7 = new _Primitives__WEBPACK_IMPORTED_MODULE_1__.RectL(reader);
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_FILLPATH: {
+                    var bounds_7 = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.RectL(reader);
                     this_1._records.push(function (gdi) {
                         gdi.fillPath(bounds_7);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_STROKEPATH: {
-                    var bounds_8 = new _Primitives__WEBPACK_IMPORTED_MODULE_1__.RectL(reader);
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_STROKEPATH: {
+                    var bounds_8 = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.RectL(reader);
                     this_1._records.push(function (gdi) {
                         gdi.strokePath(bounds_8);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SELECTCLIPPATH: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SELECTCLIPPATH: {
                     var rgnMode_1 = reader.readUint32();
                     this_1._records.push(function (gdi) {
                         gdi.selectClipPath(rgnMode_1);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_EXTSELECTCLIPRGN: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_EXTSELECTCLIPRGN: {
                     reader.skip(4);
                     var rgnMode_2 = reader.readUint32();
-                    var region_1 = rgnMode_2 !== _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RegionMode.RGN_COPY ? new _Region__WEBPACK_IMPORTED_MODULE_2__.Region(reader) : null;
+                    var region_1 = rgnMode_2 !== _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RegionMode.RGN_COPY ? new _Region__WEBPACK_IMPORTED_MODULE_3__.Region(reader) : null;
                     this_1._records.push(function (gdi) {
                         gdi.selectClipRgn(rgnMode_2, region_1);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_OFFSETCLIPRGN: {
-                    var offset_1 = new _Primitives__WEBPACK_IMPORTED_MODULE_1__.PointL(reader);
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_OFFSETCLIPRGN: {
+                    var offset_1 = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.PointL(reader);
                     this_1._records.push(function (gdi) {
                         gdi.offsetClipRgn(offset_1);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETMITERLIMIT: {
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETMITERLIMIT: {
                     var miterLimit_1 = reader.readUint32();
                     this_1._records.push(function (gdi) {
                         gdi.setMiterLimit(miterLimit_1);
                     });
                     break;
                 }
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYLINE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYLINETO:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYPOLYLINE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETPIXELV:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETMAPPERFLAGS:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETROP2:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETCOLORADJUSTMENT:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETTEXTCOLOR:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETMETARGN:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_EXCLUDECLIPRECT:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_INTERSECTCLIPRECT:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SCALEVIEWPORTEXTEX:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SCALEWINDOWEXTEX:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETWORLDTRANSFORM:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_MODIFYWORLDTRANSFORM:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_ANGLEARC:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_ELLIPSE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_ARC:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_CHORD:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_PIE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SELECTPALETTE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_CREATEPALETTE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETPALETTEENTRIES:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_RESIZEPALETTE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_REALIZEPALETTE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_EXTFLOODFILL:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_ARCTO:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYDRAW:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETARCDIRECTION:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_STROKEANDFILLPATH:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_FLATTENPATH:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_WIDENPATH:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_COMMENT:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_FILLRGN:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_FRAMERGN:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_INVERTRGN:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_PAINTRGN:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_BITBLT:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_STRETCHBLT:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_MASKBLT:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_PLGBLT:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETDIBITSTODEVICE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_STRETCHDIBITS:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_EXTCREATEFONTINDIRECTW:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_EXTTEXTOUTA:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_EXTTEXTOUTW:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYPOLYLINE16:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYDRAW16:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_CREATEMONOBRUSH:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_CREATEDIBPATTERNBRUSHPT:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYTEXTOUTA:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_POLYTEXTOUTW:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETICMMODE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_CREATECOLORSPACE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETCOLORSPACE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_DELETECOLORSPACE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_GLSRECORD:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_GLSBOUNDEDRECORD:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_PIXELFORMAT:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_DRAWESCAPE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_EXTESCAPE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SMALLTEXTOUT:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_FORCEUFIMAPPING:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_NAMEDESCAPE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_COLORCORRECTPALETTE:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETICMPROFILEA:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETICMPROFILEW:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_ALPHABLEND:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETLAYOUT:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_TRANSPARENTBLT:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_GRADIENTFILL:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETLINKEDUFIS:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_SETTEXTJUSTIFICATION:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_COLORMATCHTOTARGETW:
-                case _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType.EMR_CREATECOLORSPACEW:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_STRETCHDIBITS: {
+                    var bounds = new _Primitives__WEBPACK_IMPORTED_MODULE_2__.RectL(reader);
+                    var xDest_1 = reader.readInt32();
+                    var yDest_1 = reader.readInt32();
+                    var xSrc_1 = reader.readInt32();
+                    var ySrc_1 = reader.readInt32();
+                    var cxSrc_1 = reader.readInt32();
+                    var cySrc_1 = reader.readInt32();
+                    var offBmiSrc = reader.readUint32();
+                    var cbBmiSrc = reader.readUint32();
+                    var offBitsSrc = reader.readUint32();
+                    var cbBitsSrc = reader.readUint32();
+                    var iUsageSrc_1 = reader.readUint32();
+                    var dwRop_1 = reader.readUint32();
+                    var cxDest_1 = reader.readInt32();
+                    var cyDest_1 = reader.readInt32();
+                    var dib_1 = new _Bitmap__WEBPACK_IMPORTED_MODULE_0__.DIBitmap(reader, {
+                        header: {
+                            off: curpos + offBmiSrc,
+                            size: cbBmiSrc,
+                        },
+                        data: {
+                            off: curpos + offBitsSrc,
+                            size: cbBitsSrc,
+                        },
+                    });
+                    this_1._records.push(function (gdi) {
+                        gdi.stretchDibBits(xSrc_1, ySrc_1, cxSrc_1, cySrc_1, xDest_1, yDest_1, cxDest_1, cyDest_1, dwRop_1, iUsageSrc_1, dib_1);
+                    });
+                    break;
+                }
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYLINE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYLINETO:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYPOLYLINE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETPIXELV:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETMAPPERFLAGS:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETROP2:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETCOLORADJUSTMENT:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETTEXTCOLOR:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETMETARGN:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_EXCLUDECLIPRECT:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_INTERSECTCLIPRECT:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SCALEVIEWPORTEXTEX:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SCALEWINDOWEXTEX:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETWORLDTRANSFORM:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_MODIFYWORLDTRANSFORM:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_ANGLEARC:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_ELLIPSE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_ARC:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_CHORD:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_PIE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SELECTPALETTE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_CREATEPALETTE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETPALETTEENTRIES:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_RESIZEPALETTE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_REALIZEPALETTE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_EXTFLOODFILL:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_ARCTO:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYDRAW:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETARCDIRECTION:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_STROKEANDFILLPATH:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_FLATTENPATH:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_WIDENPATH:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_COMMENT:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_FILLRGN:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_FRAMERGN:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_INVERTRGN:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_PAINTRGN:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_BITBLT:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_STRETCHBLT:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_MASKBLT:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_PLGBLT:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETDIBITSTODEVICE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_EXTCREATEFONTINDIRECTW:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_EXTTEXTOUTA:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_EXTTEXTOUTW:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYPOLYLINE16:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYDRAW16:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_CREATEMONOBRUSH:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_CREATEDIBPATTERNBRUSHPT:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYTEXTOUTA:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_POLYTEXTOUTW:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETICMMODE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_CREATECOLORSPACE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETCOLORSPACE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_DELETECOLORSPACE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_GLSRECORD:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_GLSBOUNDEDRECORD:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_PIXELFORMAT:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_DRAWESCAPE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_EXTESCAPE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SMALLTEXTOUT:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_FORCEUFIMAPPING:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_NAMEDESCAPE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_COLORCORRECTPALETTE:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETICMPROFILEA:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETICMPROFILEW:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_ALPHABLEND:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETLAYOUT:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_TRANSPARENTBLT:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_GRADIENTFILL:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETLINKEDUFIS:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_SETTEXTJUSTIFICATION:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_COLORMATCHTOTARGETW:
+                case _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType.EMR_CREATECOLORSPACEW:
                 default: {
                     var recordName = "UNKNOWN";
-                    for (var name_1 in _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType) {
-                        var recordTypes = _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.GDI.RecordType;
+                    for (var name_1 in _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType) {
+                        var recordTypes = _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.GDI.RecordType;
                         if (recordTypes[name_1] === type) {
                             recordName = name_1;
                             break;
                         }
                     }
-                    _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.log("[EMF] " + recordName + " record (0x" + type.toString(16) + ") at offset 0x"
+                    _Helper__WEBPACK_IMPORTED_MODULE_1__.Helper.log("[EMF] " + recordName + " record (0x" + type.toString(16) + ") at offset 0x"
                         + curpos.toString(16) + " with " + size + " bytes");
                     break;
                 }
@@ -925,7 +1008,7 @@ var EMFRecords = /** @class */ (function () {
             }
         }
         if (!all) {
-            throw new _Helper__WEBPACK_IMPORTED_MODULE_0__.EMFJSError("Could not read all records");
+            throw new _Helper__WEBPACK_IMPORTED_MODULE_1__.EMFJSError("Could not read all records");
         }
     }
     EMFRecords.prototype.play = function (gdi) {
@@ -933,6 +1016,9 @@ var EMFRecords = /** @class */ (function () {
         for (var i = 0; i < len; i++) {
             this._records[i](gdi);
         }
+    };
+    EMFRecords.prototype.getBounds = function () {
+        return this._header.getBounds();
     };
     return EMFRecords;
 }());
@@ -949,7 +1035,7 @@ var EMFRecords = /** @class */ (function () {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   GDIContext: () => (/* binding */ GDIContext)
+/* harmony export */   "GDIContext": () => (/* binding */ GDIContext)
 /* harmony export */ });
 /* harmony import */ var _Helper__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./Helper */ "./src/emfjs/Helper.ts");
 /* harmony import */ var _Primitives__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./Primitives */ "./src/emfjs/Primitives.ts");
@@ -1215,6 +1301,18 @@ var GDIContext = /** @class */ (function () {
     };
     GDIContext.prototype.setStretchBltMode = function (stretchMode) {
         _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.log("[gdi] setStretchBltMode: stretchMode=" + stretchMode);
+    };
+    GDIContext.prototype.stretchDibBits = function (srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH, rasterOp, colorUsage, dib) {
+        srcX = this._todevX(srcX);
+        srcY = this._todevY(srcY);
+        srcW = this._todevW(srcW);
+        srcH = this._todevH(srcH);
+        dstX = this._todevX(dstX);
+        dstY = this._todevY(dstY);
+        dstW = this._todevW(dstW);
+        dstH = this._todevH(dstH);
+        this._pushGroup();
+        this._svg.image(this.state._svggroup, dstX, dstY, dstW, dstH, dib.base64ref());
     };
     GDIContext.prototype.rectangle = function (rect, rw, rh) {
         _Helper__WEBPACK_IMPORTED_MODULE_0__.Helper.log("[gdi] rectangle: rect=" + rect.toString() + " with pen " + this.state.selected.pen.toString()
@@ -1748,9 +1846,9 @@ var GDIContext = /** @class */ (function () {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   EMFJSError: () => (/* binding */ EMFJSError),
-/* harmony export */   Helper: () => (/* binding */ Helper),
-/* harmony export */   loggingEnabled: () => (/* binding */ loggingEnabled)
+/* harmony export */   "EMFJSError": () => (/* binding */ EMFJSError),
+/* harmony export */   "Helper": () => (/* binding */ Helper),
+/* harmony export */   "loggingEnabled": () => (/* binding */ loggingEnabled)
 /* harmony export */ });
 /*
 
@@ -2130,11 +2228,11 @@ var Helper = /** @class */ (function () {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   Obj: () => (/* binding */ Obj),
-/* harmony export */   PointL: () => (/* binding */ PointL),
-/* harmony export */   PointS: () => (/* binding */ PointS),
-/* harmony export */   RectL: () => (/* binding */ RectL),
-/* harmony export */   SizeL: () => (/* binding */ SizeL)
+/* harmony export */   "Obj": () => (/* binding */ Obj),
+/* harmony export */   "PointL": () => (/* binding */ PointL),
+/* harmony export */   "PointS": () => (/* binding */ PointS),
+/* harmony export */   "RectL": () => (/* binding */ RectL),
+/* harmony export */   "SizeL": () => (/* binding */ SizeL)
 /* harmony export */ });
 /* harmony import */ var _Helper__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./Helper */ "./src/emfjs/Helper.ts");
 /*
@@ -2287,9 +2385,9 @@ var Obj = /** @class */ (function () {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   CreateSimpleRegion: () => (/* binding */ CreateSimpleRegion),
-/* harmony export */   Region: () => (/* binding */ Region),
-/* harmony export */   Scan: () => (/* binding */ Scan)
+/* harmony export */   "CreateSimpleRegion": () => (/* binding */ CreateSimpleRegion),
+/* harmony export */   "Region": () => (/* binding */ Region),
+/* harmony export */   "Scan": () => (/* binding */ Scan)
 /* harmony export */ });
 /* harmony import */ var _Helper__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./Helper */ "./src/emfjs/Helper.ts");
 /* harmony import */ var _Primitives__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./Primitives */ "./src/emfjs/Primitives.ts");
@@ -2744,7 +2842,7 @@ var Scan = /** @class */ (function () {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   Renderer: () => (/* binding */ Renderer)
+/* harmony export */   "Renderer": () => (/* binding */ Renderer)
 /* harmony export */ });
 /* harmony import */ var _util__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../util */ "./src/util/index.ts");
 /* harmony import */ var _Blob__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./Blob */ "./src/emfjs/Blob.ts");
@@ -2789,9 +2887,13 @@ var Renderer = /** @class */ (function () {
     }
     Renderer.prototype.render = function (info) {
         var svgElement = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        this._render(new _util__WEBPACK_IMPORTED_MODULE_0__.SVG(svgElement), info.mapMode, info.wExt, info.hExt, info.xExt, info.yExt);
-        svgElement.setAttribute("viewBox", [0, 0, info.xExt, info.yExt].join(" "));
-        svgElement.setAttribute("preserveAspectRatio", "none"); // TODO: MM_ISOTROPIC vs MM_ANISOTROPIC
+        // Get the actual bounds from the EMF file
+        var emfBounds = this._img.getBounds();
+        this._render(new _util__WEBPACK_IMPORTED_MODULE_0__.SVG(svgElement), info.mapMode, emfBounds.width, emfBounds.height, emfBounds.width, emfBounds.height);
+        svgElement.setAttribute("viewBox", [0, 0, emfBounds.width, emfBounds.height].join(" "));
+        // Preserve aspect ratio by default (xMidYMid meet), or allow stretching if explicitly disabled
+        var preserveAspectRatio = info.preserveAspectRatio !== false ? "xMidYMid meet" : "none";
+        svgElement.setAttribute("preserveAspectRatio", preserveAspectRatio);
         svgElement.setAttribute("width", info.width);
         svgElement.setAttribute("height", info.height);
         return svgElement;
@@ -2817,9 +2919,7 @@ var Renderer = /** @class */ (function () {
         gdi.setWindowExtEx(w, h);
         gdi.setViewportExtEx(xExt, yExt);
         gdi.setMapMode(mapMode);
-        _Helper__WEBPACK_IMPORTED_MODULE_4__.Helper.log("[EMF] BEGIN RENDERING --->");
         this._img.render(gdi);
-        _Helper__WEBPACK_IMPORTED_MODULE_4__.Helper.log("[EMF] <--- DONE RENDERING");
     };
     return Renderer;
 }());
@@ -2831,6 +2931,13 @@ var EMF = /** @class */ (function () {
     }
     EMF.prototype.render = function (gdi) {
         this._records.play(gdi);
+    };
+    EMF.prototype.getBounds = function () {
+        var bounds = this._records.getBounds();
+        return {
+            width: bounds.right - bounds.left,
+            height: bounds.bottom - bounds.top
+        };
     };
     return EMF;
 }());
@@ -2846,10 +2953,10 @@ var EMF = /** @class */ (function () {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   Brush: () => (/* binding */ Brush),
-/* harmony export */   ColorRef: () => (/* binding */ ColorRef),
-/* harmony export */   Font: () => (/* binding */ Font),
-/* harmony export */   Pen: () => (/* binding */ Pen)
+/* harmony export */   "Brush": () => (/* binding */ Brush),
+/* harmony export */   "ColorRef": () => (/* binding */ ColorRef),
+/* harmony export */   "Font": () => (/* binding */ Font),
+/* harmony export */   "Pen": () => (/* binding */ Pen)
 /* harmony export */ });
 /* harmony import */ var _Bitmap__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./Bitmap */ "./src/emfjs/Bitmap.ts");
 /* harmony import */ var _Helper__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./Helper */ "./src/emfjs/Helper.ts");
@@ -3112,9 +3219,9 @@ var Pen = /** @class */ (function (_super) {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   SVG: () => (/* binding */ SVG),
-/* harmony export */   SVGFilters: () => (/* binding */ SVGFilters),
-/* harmony export */   SVGPathBuilder: () => (/* binding */ SVGPathBuilder)
+/* harmony export */   "SVG": () => (/* binding */ SVG),
+/* harmony export */   "SVGFilters": () => (/* binding */ SVGFilters),
+/* harmony export */   "SVGPathBuilder": () => (/* binding */ SVGPathBuilder)
 /* harmony export */ });
 /*
 
@@ -3363,7 +3470,7 @@ var SVG = /** @class */ (function () {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   SVG: () => (/* reexport safe */ _SVG__WEBPACK_IMPORTED_MODULE_0__.SVG)
+/* harmony export */   "SVG": () => (/* reexport safe */ _SVG__WEBPACK_IMPORTED_MODULE_0__.SVG)
 /* harmony export */ });
 /* harmony import */ var _SVG__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./SVG */ "./src/util/SVG.ts");
 /*
@@ -3460,9 +3567,9 @@ var __webpack_exports__ = {};
   \****************************/
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   Error: () => (/* reexport safe */ _Helper__WEBPACK_IMPORTED_MODULE_1__.EMFJSError),
-/* harmony export */   Renderer: () => (/* reexport safe */ _Renderer__WEBPACK_IMPORTED_MODULE_0__.Renderer),
-/* harmony export */   loggingEnabled: () => (/* reexport safe */ _Helper__WEBPACK_IMPORTED_MODULE_1__.loggingEnabled)
+/* harmony export */   "Error": () => (/* reexport safe */ _Helper__WEBPACK_IMPORTED_MODULE_1__.EMFJSError),
+/* harmony export */   "Renderer": () => (/* reexport safe */ _Renderer__WEBPACK_IMPORTED_MODULE_0__.Renderer),
+/* harmony export */   "loggingEnabled": () => (/* reexport safe */ _Helper__WEBPACK_IMPORTED_MODULE_1__.loggingEnabled)
 /* harmony export */ });
 /* harmony import */ var _Renderer__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./Renderer */ "./src/emfjs/Renderer.ts");
 /* harmony import */ var _Helper__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./Helper */ "./src/emfjs/Helper.ts");

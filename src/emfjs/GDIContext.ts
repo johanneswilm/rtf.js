@@ -27,6 +27,7 @@ SOFTWARE.
 
 import { SVG } from "../util";
 import { SVGPathBuilder } from "../util/SVG";
+import { DIBitmap } from "./Bitmap";
 import { EMFJSError, Helper } from "./Helper";
 import { Obj, PointL, PointS, RectL } from "./Primitives";
 import { CreateSimpleRegion, Region } from "./Region";
@@ -312,6 +313,21 @@ export class GDIContext {
 
     public setStretchBltMode(stretchMode: number): void {
         Helper.log("[gdi] setStretchBltMode: stretchMode=" + stretchMode);
+    }
+
+    public stretchDibBits(srcX: number, srcY: number, srcW: number, srcH: number,
+                          dstX: number, dstY: number, dstW: number, dstH: number,
+                          rasterOp: number, colorUsage: number, dib: DIBitmap): void {
+        srcX = this._todevX(srcX);
+        srcY = this._todevY(srcY);
+        srcW = this._todevW(srcW);
+        srcH = this._todevH(srcH);
+        dstX = this._todevX(dstX);
+        dstY = this._todevY(dstY);
+        dstW = this._todevW(dstW);
+        dstH = this._todevH(dstH);
+        this._pushGroup();
+        this._svg.image(this.state._svggroup, dstX, dstY, dstW, dstH, dib.base64ref());
     }
 
     public rectangle(rect: RectL, rw: number, rh: number): void {
